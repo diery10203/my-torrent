@@ -10,6 +10,8 @@
     "dev": "node scripts/run-electron.js --enable-logging",
     "build": "electron-builder",
     "build:mac": "electron-builder --mac",
+    "build:mac:arm64": "electron-builder --mac --arm64",
+    "build:mac:x64": "electron-builder --mac --x64",
     "build:win": "electron-builder --win",
     "build:all": "electron-builder -mw",
     "rebuild": "electron-builder install-app-deps"

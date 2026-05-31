@@ -55,7 +55,8 @@ mac:
   darkModeSupport: true
 
 dmg:
-  title: "${productName} ${version}"
+  # Tên volume phải khác nhau giữa x64/arm64 — build song song sẽ lỗi hdiutil nếu trùng
+  title: "MyTorrent-${version}-${arch}"
   contents:
     - x: 130
       y: 220

@@ -6,10 +6,11 @@ const { buildFileTree, refreshFileTreeVolatile } = require('./file-tree');
 const { loadSession, saveSession } = require('./session-store');
 
 const METADATA_TIMEOUT_MS = 120_000;
+const RESTORE_METADATA_TIMEOUT_MS = 120_000;
 const MIN_FREE_BYTES = 50 * 1024 * 1024; // 50 MB headroom
 const SESSION_SAVE_DEBOUNCE_MS = 400;
 
-/** @typedef {'downloading'|'paused'|'seeding'|'stopped'|'done'} TorrentStatus */
+/** @typedef {'downloading'|'paused'|'seeding'|'stopped'|'done'|'restoring'|'not_found'} TorrentStatus */
 
 class TorrentError extends Error {
   /**
@@ -45,6 +46,14 @@ class TorrentManager extends EventEmitter {
     /** infoHash → magnet URI hoặc đường dẫn .torrent gốc */
     /** @type {Map<string, string>} */
     this._torrentSources = new Map();
+    /** Torrent không khôi phục được — hiển thị trên UI với status not_found */
+    /** @type {Map<string, object>} */
+    this._unavailable = new Map();
+    /** infoHash đang khôi phục nền */
+    /** @type {Set<string>} */
+    this._restoring = new Set();
+    /** @type {Map<string, object>} */
+    this._restoringMeta = new Map();
     this._ready = false;
   }
 
@@ -53,8 +62,12 @@ class TorrentManager extends EventEmitter {
     await this._ensureDownloadDir(downloadPath);
     await getClient();
     this._ready = true;
-    await this._restoreSession();
     this._startPolling();
+  }
+
+  /** Khôi phục torrent từ session — chạy nền, không chặn mở cửa sổ */
+  restoreSession() {
+    return this._restoreSession();
   }
 
   /**
@@ -136,9 +149,18 @@ class TorrentManager extends EventEmitter {
    */
   async removeTorrent(infoHash, deleteFiles = false) {
     this._assertReady();
+    const hash = this._normalizeHash(infoHash);
+
+    const unavailable = this._unavailable.get(hash);
+    if (unavailable) {
+      this._unavailable.delete(hash);
+      this.emit('removed', hash);
+      this._scheduleSessionSave();
+      await this._emitStatsUpdate();
+      return { ok: true, infoHash: hash, deleteFiles: false };
+    }
 
     const torrent = await this._getTorrentOrThrow(infoHash);
-    const hash = this._normalizeHash(torrent.infoHash);
     const client = await getClient();
 
     const savedFiles = torrent.files.map((f) => f.path);
@@ -183,7 +205,25 @@ class TorrentManager extends EventEmitter {
   async getTorrentStats() {
     this._assertReady();
     const client = await getClient();
-    return client.torrents.map((t) => this._buildStats(t));
+    const byHash = new Map();
+
+    for (const entry of this._unavailable.values()) {
+      byHash.set(entry.infoHash, this._buildUnavailableStats(entry));
+    }
+
+    for (const hash of this._restoring) {
+      const meta = this._restoringMeta.get(hash);
+      if (meta) {
+        byHash.set(hash, this._buildRestoringStats(meta));
+      }
+    }
+
+    for (const torrent of client.torrents) {
+      const stats = this._buildStats(torrent);
+      byHash.set(stats.infoHash, stats);
+    }
+
+    return [...byHash.values()];
   }
 
   /**
@@ -272,6 +312,9 @@ class TorrentManager extends EventEmitter {
     this._fileTreeCache.clear();
     this._stopped.clear();
     this._torrentSources.clear();
+    this._unavailable.clear();
+    this._restoring.clear();
+    this._restoringMeta.clear();
     destroyClient();
     this._ready = false;
   }
@@ -417,12 +460,22 @@ class TorrentManager extends EventEmitter {
       this._scheduleSessionSave();
     });
 
+    torrent.on('ready', () => {
+      this._emitStatsUpdate().catch(() => {});
+      this._scheduleSessionSave();
+    });
+
     if (torrent.metadata) {
       this._onMetadataReady(torrent);
     }
 
     torrent.on('done', async () => {
+      this._scheduleSessionSave();
       this.emit('update', await this.getTorrentStats());
+    });
+
+    torrent.on('download', () => {
+      this._scheduleSessionSave();
     });
   }
 
@@ -600,19 +653,38 @@ class TorrentManager extends EventEmitter {
     if (!this._ready) return;
 
     const client = await getClient();
-    const entries = client.torrents.map((torrent) => {
+    const activeEntries = client.torrents.map((torrent) => {
       const hash = this._normalizeHash(torrent.infoHash);
       return {
         torrentId: torrent.magnetURI || this._torrentSources.get(hash) || '',
         downloadPath: torrent.path,
         infoHash: hash,
+        name: torrent.name || undefined,
         magnetURI: torrent.magnetURI || undefined,
+        progress: Math.round(torrent.progress * 1000) / 10,
+        length: torrent.length || 0,
         stopped: this._stopped.has(hash),
         paused: torrent.paused && !this._stopped.has(hash),
+        unavailable: false,
       };
     });
 
-    await saveSession(entries.filter((e) => e.torrentId));
+    const unavailableEntries = [...this._unavailable.values()].map((entry) => ({
+      torrentId: entry.torrentId || entry.magnetURI || '',
+      downloadPath: entry.downloadPath || entry.path || getDefaultDownloadPath(),
+      infoHash: entry.infoHash,
+      name: entry.name,
+      magnetURI: entry.magnetURI,
+      progress: entry.progress || 0,
+      length: entry.length || 0,
+      stopped: false,
+      paused: false,
+      unavailable: true,
+    }));
+
+    await saveSession(
+      [...activeEntries, ...unavailableEntries].filter((e) => e.torrentId || e.infoHash)
+    );
   }
 
   async _restoreSession() {
@@ -620,33 +692,180 @@ class TorrentManager extends EventEmitter {
     if (entries.length === 0) return;
 
     for (const entry of entries) {
-      const torrentId = entry.magnetURI || entry.torrentId;
-      if (!torrentId) continue;
+      const hash = this._entryInfoHash(entry);
+      if (!hash) continue;
 
-      const downloadPath = entry.downloadPath || getDefaultDownloadPath();
-      const shouldPause = entry.stopped || entry.paused;
-
-      try {
-        const stats = await this._addTorrentWithOptions(torrentId, downloadPath, {
-          paused: shouldPause,
+      if (entry.unavailable) {
+        this._unavailable.set(hash, {
+          infoHash: hash,
+          name: entry.name || this._guessName(entry) || 'Torrent không xác định',
+          torrentId: entry.magnetURI || entry.torrentId,
+          magnetURI: entry.magnetURI,
+          downloadPath: entry.downloadPath,
+          path: entry.downloadPath || '',
         });
-
-        if (entry.stopped) {
-          this._stopped.add(this._normalizeHash(stats.infoHash));
-        }
-      } catch (err) {
-        console.error('[TorrentManager] Không khôi phục được torrent:', torrentId, err.message);
+      } else {
+        this._restoring.add(hash);
+        this._restoringMeta.set(hash, entry);
       }
     }
+
+    await this._emitStatsUpdate();
+
+    await Promise.allSettled(
+      entries.filter((e) => !e.unavailable).map((entry) => this._restoreOneEntry(entry))
+    );
 
     await this._emitStatsUpdate();
     this._scheduleSessionSave();
   }
 
+  async _restoreOneEntry(entry) {
+    const hash = this._entryInfoHash(entry);
+    if (!hash) return;
+
+    const torrentId = entry.magnetURI || entry.torrentId;
+    if (!torrentId) {
+      this._markUnavailable(entry, hash);
+      return;
+    }
+
+    if (!torrentId.startsWith('magnet:?')) {
+      try {
+        await fs.promises.access(path.resolve(torrentId), fs.constants.R_OK);
+      } catch {
+        this._markUnavailable(entry, hash);
+        return;
+      }
+    }
+
+    try {
+      const stats = await this._addTorrentWithOptions(
+        torrentId,
+        entry.downloadPath || getDefaultDownloadPath(),
+        { paused: entry.stopped || entry.paused, restore: true, sessionEntry: entry }
+      );
+
+      const restoredHash = this._normalizeHash(stats.infoHash);
+      this._restoring.delete(hash);
+      this._restoring.delete(restoredHash);
+      this._restoringMeta.delete(hash);
+      this._restoringMeta.delete(restoredHash);
+      this._unavailable.delete(hash);
+      this._unavailable.delete(restoredHash);
+
+      if (entry.stopped) {
+        this._stopped.add(restoredHash);
+      }
+
+      await this._emitStatsUpdate();
+    } catch (err) {
+      console.error('[TorrentManager] Không khôi phục được torrent:', torrentId, err.message);
+
+      if (entry.progress > 0 || entry.length > 0) {
+        this._restoring.delete(hash);
+        this._restoringMeta.delete(hash);
+        this._unavailable.set(hash, {
+          infoHash: hash,
+          name: entry.name || this._guessName(entry) || 'Torrent không xác định',
+          torrentId,
+          magnetURI: entry.magnetURI,
+          downloadPath: entry.downloadPath,
+          path: entry.downloadPath || '',
+          progress: entry.progress || 0,
+          length: entry.length || 0,
+        });
+      } else {
+        this._markUnavailable(entry, hash);
+      }
+
+      await this._emitStatsUpdate();
+    }
+  }
+
+  _markUnavailable(entry, hash) {
+    this._restoring.delete(hash);
+    this._restoringMeta.delete(hash);
+    this._unavailable.set(hash, {
+      infoHash: hash,
+      name: entry.name || this._guessName(entry) || 'Torrent không xác định',
+      torrentId: entry.magnetURI || entry.torrentId,
+      magnetURI: entry.magnetURI,
+      downloadPath: entry.downloadPath,
+      path: entry.downloadPath || '',
+      progress: entry.progress || 0,
+      length: entry.length || 0,
+    });
+  }
+
+  _entryInfoHash(entry) {
+    if (entry.infoHash) return this._normalizeHash(entry.infoHash);
+
+    const id = entry.magnetURI || entry.torrentId || '';
+    const magnetMatch = id.match(/xt=urn:btih:([a-fA-F0-9]{40})/i);
+    if (magnetMatch) return magnetMatch[1].toLowerCase();
+
+    const bareMatch = id.match(/^([a-fA-F0-9]{40})$/i);
+    if (bareMatch) return bareMatch[1].toLowerCase();
+
+    return null;
+  }
+
+  _guessName(entry) {
+    if (entry.name) return entry.name;
+
+    const id = entry.magnetURI || entry.torrentId || '';
+    const dnMatch = id.match(/[?&]dn=([^&]+)/);
+    if (dnMatch) {
+      try {
+        return decodeURIComponent(dnMatch[1].replace(/\+/g, ' '));
+      } catch {
+        return dnMatch[1];
+      }
+    }
+
+    if (id && !id.startsWith('magnet:')) {
+      return path.basename(id, '.torrent');
+    }
+
+    return null;
+  }
+
+  _buildRestoringStats(entry) {
+    const hash = this._entryInfoHash(entry);
+    return {
+      infoHash: hash,
+      name: entry.name || this._guessName(entry) || 'Đang khôi phục…',
+      progress: entry.progress || 0,
+      downloadSpeed: 0,
+      uploadSpeed: 0,
+      numPeers: 0,
+      status: 'restoring',
+      eta: null,
+      length: entry.length || 0,
+      path: entry.downloadPath || '',
+    };
+  }
+
+  _buildUnavailableStats(entry) {
+    return {
+      infoHash: entry.infoHash,
+      name: entry.name || 'Torrent không xác định',
+      progress: entry.progress || 0,
+      downloadSpeed: 0,
+      uploadSpeed: 0,
+      numPeers: 0,
+      status: 'not_found',
+      eta: null,
+      length: entry.length || 0,
+      path: entry.path || entry.downloadPath || '',
+    };
+  }
+
   /**
    * @param {string} torrentId
    * @param {string} [downloadPath]
-   * @param {{ paused?: boolean }} [options]
+   * @param {{ paused?: boolean, restore?: boolean, sessionEntry?: object }} [options]
    */
   async _addTorrentWithOptions(torrentId, downloadPath, options = {}) {
     this._assertReady();
@@ -664,48 +883,78 @@ class TorrentManager extends EventEmitter {
       let settled = false;
       let torrentRef = null;
 
+      const succeed = (added) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+
+        this._active.set(added.infoHash, added);
+        this._torrentSources.set(this._normalizeHash(added.infoHash), trimmed);
+
+        if (options.paused) {
+          this._applyPause(added);
+        }
+
+        resolve(this._buildStats(added));
+      };
+
       const fail = (err) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
 
+        // Restore: không xóa file đã tải trên đĩa
+        if (options.restore && torrentRef?.infoHash) {
+          succeed(torrentRef);
+          torrentRef.once('ready', () => {
+            this._emitStatsUpdate().catch(() => {});
+            this._scheduleSessionSave();
+          });
+          return;
+        }
+
         if (torrentRef?.infoHash) {
-          client.remove(torrentRef.infoHash, { destroyStore: true }, () => {});
+          client.remove(torrentRef.infoHash, { destroyStore: false }, () => {});
           this._active.delete(torrentRef.infoHash);
         }
 
         reject(this._classifyError(err));
       };
 
+      const timeoutMs = options.restore ? RESTORE_METADATA_TIMEOUT_MS : METADATA_TIMEOUT_MS;
       const timer = setTimeout(() => {
+        if (options.restore && torrentRef?.infoHash) {
+          succeed(torrentRef);
+          torrentRef.once('ready', () => {
+            this._emitStatsUpdate().catch(() => {});
+            this._scheduleSessionSave();
+          });
+          return;
+        }
+
         fail(new TorrentError(
           'METADATA_TIMEOUT',
           'Hết thời gian chờ metadata torrent (magnet link có thể không hợp lệ)'
         ));
-      }, METADATA_TIMEOUT_MS);
+      }, timeoutMs);
 
       try {
         torrentRef = client.add(
           source,
           { path: targetPath, paused: options.paused === true },
           (added) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-
-            this._active.set(added.infoHash, added);
-            this._torrentSources.set(this._normalizeHash(added.infoHash), trimmed);
-
-            if (options.paused) {
-              this._applyPause(added);
-            }
-
-            resolve(this._buildStats(added));
+            succeed(added);
           }
         );
 
         this._bindTorrentEvents(torrentRef);
-        torrentRef.on('error', fail);
+        torrentRef.on('error', (err) => {
+          if (options.restore) {
+            console.error('[TorrentManager] restore warning:', err.message);
+            return;
+          }
+          fail(err);
+        });
       } catch (err) {
         fail(err);
       }

@@ -30,6 +30,8 @@ const STATUS_MAP = {
   stopped:     { label: 'Đã dừng',  cls: 'badge-stopped' },
   seeding:     { label: 'Seeding',  cls: 'badge-seeding' },
   done:        { label: 'Hoàn thành', cls: 'badge-done' },
+  restoring:   { label: 'Đang khôi phục', cls: 'badge-restoring' },
+  not_found:   { label: 'Không tìm thấy', cls: 'badge-not-found' },
 };
 
 function statusMeta(status) {
@@ -251,7 +253,9 @@ class TorrentTableView {
   _patchRow(entry, t) {
     const { refs, snap } = entry;
     const meta = statusMeta(t.status);
-    const eta = t.status === 'seeding' || t.status === 'done' ? '—' : formatETA(t.eta);
+    const eta = ['seeding', 'done', 'not_found', 'restoring'].includes(t.status)
+      ? '—'
+      : formatETA(t.eta);
 
     if (snap.name !== t.name) {
       refs.name.textContent = t.name;
@@ -524,13 +528,14 @@ class TorrentContextMenu {
 
     this._hash = infoHash;
 
-    const canResume = torrent?.status === 'paused' || torrent?.status === 'stopped';
-    const canPause = torrent?.status === 'downloading' || torrent?.status === 'seeding';
-    const canStop = torrent?.status === 'downloading' || torrent?.status === 'seeding';
+    const isUnavailable = torrent?.status === 'not_found' || torrent?.status === 'restoring';
+    const canResume = !isUnavailable && (torrent?.status === 'paused' || torrent?.status === 'stopped');
+    const canPause = !isUnavailable && (torrent?.status === 'downloading' || torrent?.status === 'seeding');
+    const canStop = !isUnavailable && (torrent?.status === 'downloading' || torrent?.status === 'seeding');
     this._setDisabled('resume', !canResume);
     this._setDisabled('pause', !canPause);
     this._setDisabled('stop', !canStop);
-    this._setDisabled('open-folder', !torrent?.path);
+    this._setDisabled('open-folder', isUnavailable || !torrent?.path);
     this._setDisabled('delete', false);
 
     this.el.classList.remove('hidden');

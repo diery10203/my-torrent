@@ -280,6 +280,8 @@ html, body {
 .badge-seeding     { background: #1a3c1a; color: #7ed47e; }
 .badge-paused      { background: #33353b; color: #aaa; }
 .badge-stopped     { background: #3a2a1a; color: #d4a574; }
+.badge-restoring   { background: #2a2a3a; color: #a0a8e0; }
+.badge-not-found   { background: #3a1a1a; color: #e08080; }
 .badge-done        { background: #2a3a2a; color: #8bc88b; }
 
 .empty-state {
