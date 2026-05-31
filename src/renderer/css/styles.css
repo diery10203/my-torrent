@@ -279,6 +279,7 @@ html, body {
 .badge-downloading { background: #1a3a5c; color: #7ec8f0; }
 .badge-seeding     { background: #1a3c1a; color: #7ed47e; }
 .badge-paused      { background: #33353b; color: #aaa; }
+.badge-stopped     { background: #3a2a1a; color: #d4a574; }
 .badge-done        { background: #2a3a2a; color: #8bc88b; }
 
 .empty-state {

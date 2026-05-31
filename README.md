@@ -86,24 +86,62 @@ npm start
 
 DevTools tự mở khi `NODE_ENV=development`.
 
-## Build
+## Build thành app cài đặt
+
+### Bước 1 — Cài dependencies
 
 ```bash
-# macOS (.dmg + .zip)
+npm install
+```
+
+### Bước 2 — Build theo nền tảng
+
+```bash
+# macOS (bạn đang dùng Mac → dùng lệnh này)
 npm run build:mac
 
-# Windows (NSIS installer)
+# Windows (cần chạy trên máy Windows, hoặc dùng CI)
 npm run build:win
 
-# Cả hai
+# Cả macOS + Windows
 npm run build:all
 ```
 
-Output nằm trong thư mục `dist/`.
+### Bước 3 — Lấy file cài đặt
 
-Trước khi build release, thêm icon vào:
-- `assets/icons/icon.icns` (macOS)
-- `assets/icons/icon.ico` (Windows)
+Sau khi build xong, mở thư mục `dist/`:
+
+| File | Dùng cho |
+|------|----------|
+| `My Torrent-0.1.0.dmg` | Mac Intel — double-click để cài |
+| `My Torrent-0.1.0-arm64.dmg` | Mac Apple Silicon (M1/M2/M3) |
+| `My Torrent-0.1.0-mac.zip` | Mac Intel — bản zip portable |
+| `My Torrent-0.1.0-arm64-mac.zip` | Mac Apple Silicon — bản zip |
+| `My Torrent Setup 0.1.0.exe` | Windows (sau `build:win`) |
+
+**Mac Apple Silicon:** dùng file `-arm64.dmg`.  
+**Mac Intel:** dùng file `.dmg` không có `-arm64`.
+
+Cài trên macOS:
+```bash
+open dist/My\ Torrent-0.1.0-arm64.dmg   # Apple Silicon
+# Kéo "My Torrent" vào Applications
+```
+
+### Lưu ý khi build
+
+1. **Icon** — hiện dùng `assets/icon.png` (512×512). Thay file này bằng icon đẹp hơn trước khi release.
+2. **Code signing (macOS)** — build dev không ký certificate. Lần đầu mở, macOS có thể cảnh báo → **System Settings → Privacy & Security → Open Anyway**.
+3. **Magnet handler** — chỉ hoạt động đúng sau khi **cài app build**, không phải `npm start`.
+4. **Build Windows trên Mac** — cần Wine (phức tạp). Nên build Windows trên máy Windows hoặc GitHub Actions.
+
+### Lỗi thường gặp
+
+| Lỗi | Cách xử lý |
+|-----|------------|
+| `node-gyp` / `distutils` khi build | Đã tắt `npmRebuild` trong config — chạy lại `npm run build:mac` |
+| `icon directory doesn't contain icons` | Đảm bảo có file `assets/icon.png` |
+| App bị Gatekeeper chặn | Click phải → Open, hoặc ký app bằng Apple Developer ID |
 
 ## Sử dụng
 

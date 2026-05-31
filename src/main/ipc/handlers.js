@@ -32,7 +32,7 @@ function registerIpcHandlers(getMainWindow) {
       case 'resume':
         return torrentManager.resumeTorrent(infoHash);
       case 'stop':
-        return torrentManager.removeTorrent(infoHash, false);
+        return torrentManager.stopTorrent(infoHash);
       case 'delete':
         return torrentManager.removeTorrent(infoHash, options.deleteFiles === true);
       default:

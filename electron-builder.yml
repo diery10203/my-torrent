@@ -18,6 +18,10 @@ asar: true
 asarUnpack:
   - "**/*.node"
 
+# WebTorrent optional native deps (bufferutil…) — bỏ qua rebuild để build ổn định
+npmRebuild: false
+buildDependenciesFromSource: false
+
 # ── Protocol & file associations ─────────────────────────────────────────────
 protocols:
   - name: BitTorrent Magnet
@@ -43,7 +47,7 @@ mac:
       arch:
         - x64
         - arm64
-  icon: assets/icons/icon.icns
+  icon: assets/icon.png
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: assets/entitlements.mac.plist
@@ -52,7 +56,6 @@ mac:
 
 dmg:
   title: "${productName} ${version}"
-  icon: assets/icons/icon.icns
   contents:
     - x: 130
       y: 220
@@ -68,7 +71,6 @@ win:
       arch:
         - x64
         - arm64
-  icon: assets/icons/icon.ico
   publisherName: My Torrent
 
 nsis:

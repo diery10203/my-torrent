@@ -27,6 +27,7 @@ function formatETA(seconds) {
 const STATUS_MAP = {
   downloading: { label: 'Đang tải', cls: 'badge-downloading' },
   paused:      { label: 'Tạm dừng', cls: 'badge-paused' },
+  stopped:     { label: 'Đã dừng',  cls: 'badge-stopped' },
   seeding:     { label: 'Seeding',  cls: 'badge-seeding' },
   done:        { label: 'Hoàn thành', cls: 'badge-done' },
 };
@@ -38,9 +39,9 @@ function statusMeta(status) {
 const FILTER_FN = {
   all:         () => true,
   downloading: (t) => t.status === 'downloading',
-  done:        (t) => t.status === 'done',
+  done:        (t) => t.status === 'done' || t.status === 'seeding' || t.status === 'stopped',
   seeding:     (t) => t.status === 'seeding',
-  paused:      (t) => t.status === 'paused',
+  paused:      (t) => t.status === 'paused' || t.status === 'stopped',
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -166,7 +167,10 @@ class TorrentTableView {
     const counts = { all: 0, downloading: 0, done: 0, seeding: 0, paused: 0 };
     for (const t of this.data.values()) {
       counts.all++;
-      if (t.status in counts) counts[t.status]++;
+      if (FILTER_FN.downloading(t)) counts.downloading++;
+      if (FILTER_FN.done(t)) counts.done++;
+      if (FILTER_FN.seeding(t)) counts.seeding++;
+      if (FILTER_FN.paused(t)) counts.paused++;
     }
     return counts;
   }
@@ -520,10 +524,12 @@ class TorrentContextMenu {
 
     this._hash = infoHash;
 
-    const paused = torrent?.status === 'paused';
-    this._setDisabled('resume', !paused);
-    this._setDisabled('pause', paused);
-    this._setDisabled('stop', false);
+    const canResume = torrent?.status === 'paused' || torrent?.status === 'stopped';
+    const canPause = torrent?.status === 'downloading' || torrent?.status === 'seeding';
+    const canStop = torrent?.status === 'downloading' || torrent?.status === 'seeding';
+    this._setDisabled('resume', !canResume);
+    this._setDisabled('pause', !canPause);
+    this._setDisabled('stop', !canStop);
     this._setDisabled('open-folder', !torrent?.path);
     this._setDisabled('delete', false);
 
@@ -752,9 +758,7 @@ class App {
           await window.api.controlTorrent(hash, 'pause');
           break;
         case 'stop':
-          if (confirm('Dừng torrent và gỡ khỏi danh sách?\n(File đã tải vẫn giữ trên ổ đĩa)')) {
-            await window.api.controlTorrent(hash, 'stop');
-          }
+          await window.api.controlTorrent(hash, 'stop');
           break;
         case 'open-folder':
           await this._openTorrentFolder(hash);
@@ -895,19 +899,39 @@ class App {
 
     document.getElementById('btn-pause').addEventListener('click', async () => {
       const hash = this.table.getSelected();
-      if (hash) await window.api.controlTorrent(hash, 'pause');
+      if (!hash) {
+        alert('Chọn một torrent trong danh sách trước.');
+        return;
+      }
+      try {
+        await window.api.controlTorrent(hash, 'pause');
+      } catch (err) {
+        alert(err.message || String(err));
+      }
     });
 
     document.getElementById('btn-resume').addEventListener('click', async () => {
       const hash = this.table.getSelected();
-      if (hash) await window.api.controlTorrent(hash, 'resume');
+      if (!hash) {
+        alert('Chọn một torrent trong danh sách trước.');
+        return;
+      }
+      try {
+        await window.api.controlTorrent(hash, 'resume');
+      } catch (err) {
+        alert(err.message || String(err));
+      }
     });
 
     document.getElementById('btn-remove').addEventListener('click', async () => {
       const hash = this.table.getSelected();
       if (!hash) return;
-      if (confirm('Dừng torrent và gỡ khỏi danh sách?\n(File đã tải vẫn giữ trên ổ đĩa)')) {
-        await window.api.controlTorrent(hash, 'stop');
+      if (confirm('Xóa torrent khỏi danh sách và xóa tất cả file đã tải?\nHành động này không thể hoàn tác.')) {
+        try {
+          await window.api.controlTorrent(hash, 'delete', { deleteFiles: true });
+        } catch (err) {
+          alert(err.message || String(err));
+        }
       }
     });
 

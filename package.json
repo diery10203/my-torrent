@@ -6,8 +6,8 @@
   "author": "",
   "license": "MIT",
   "scripts": {
-    "start": "electron .",
-    "dev": "electron . --enable-logging",
+    "start": "node scripts/run-electron.js",
+    "dev": "node scripts/run-electron.js --enable-logging",
     "build": "electron-builder",
     "build:mac": "electron-builder --mac",
     "build:win": "electron-builder --win",
@@ -23,5 +23,10 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "build": {
+    "extends": "electron-builder.yml",
+    "npmRebuild": false,
+    "nodeGypRebuild": false
   }
 }

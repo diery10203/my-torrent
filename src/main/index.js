@@ -12,6 +12,7 @@ const {
 let mainWindow = null;
 /** @type {ReturnType<typeof createProtocolBridge> | null} */
 let protocolBridge = null;
+let sessionSavedOnQuit = false;
 
 /** URL/file mở trước khi app ready (macOS) */
 /** @type {string | null} */
@@ -82,6 +83,15 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
-  torrentManager.destroy();
+app.on('before-quit', (e) => {
+  if (sessionSavedOnQuit) {
+    torrentManager.destroy();
+    return;
+  }
+
+  e.preventDefault();
+  torrentManager.saveSessionNow().finally(() => {
+    sessionSavedOnQuit = true;
+    app.quit();
+  });
 });
