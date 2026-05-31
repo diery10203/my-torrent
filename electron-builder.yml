@@ -1,0 +1,74 @@
+# https://www.electron.build/configuration
+
+appId: com.mytorrent.app
+productName: My Torrent
+copyright: Copyright © 2026
+
+directories:
+  output: dist
+  buildResources: assets
+
+files:
+  - src/**/*
+  - package.json
+  - "!**/*.map"
+  - "!**/node_modules/**/{CHANGELOG.md,README.md,readme.md,readme,test,__tests__,tests,powered-test,example,examples,*.d.ts}"
+
+asar: true
+asarUnpack:
+  - "**/*.node"
+
+# ── macOS ──────────────────────────────────────────────────────────────────────
+mac:
+  category: public.app-category.utilities
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  icon: assets/icons/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: assets/entitlements.mac.plist
+  entitlementsInherit: assets/entitlements.mac.plist
+  darkModeSupport: true
+
+dmg:
+  title: "${productName} ${version}"
+  icon: assets/icons/icon.icns
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+# ── Windows ────────────────────────────────────────────────────────────────────
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - arm64
+  icon: assets/icons/icon.ico
+  publisherName: My Torrent
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: My Torrent
+
+# ── Publish (optional — uncomment when ready) ──────────────────────────────────
+# publish:
+#   provider: github
+#   owner: your-username
+#   repo: my-torrent

@@ -1,0 +1,27 @@
+{
+  "name": "my-torrent",
+  "version": "0.1.0",
+  "description": "Cross-platform BitTorrent client for macOS and Windows",
+  "main": "src/main/index.js",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --enable-logging",
+    "build": "electron-builder",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build:all": "electron-builder -mw",
+    "rebuild": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "webtorrent": "^2.8.5"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

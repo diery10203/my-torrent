@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; connect-src 'self'; img-src 'self' data:;" />
+  <title>My Torrent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body class="bg-zinc-900 text-zinc-100 h-screen flex flex-col overflow-hidden">
+
+  <!-- Toolbar -->
+  <header class="flex items-center gap-2 px-3 py-2 bg-zinc-800 border-b border-zinc-700 shrink-0">
+    <button id="btn-add-magnet" class="toolbar-btn" title="Thêm magnet link">
+      <span class="icon">＋</span> Magnet
+    </button>
+    <button id="btn-add-torrent" class="toolbar-btn" title="Thêm file .torrent">
+      <span class="icon">📄</span> .torrent
+    </button>
+    <button id="btn-pause" class="toolbar-btn" title="Tạm dừng">
+      ⏸
+    </button>
+    <button id="btn-resume" class="toolbar-btn" title="Tiếp tục">
+      ▶
+    </button>
+    <button id="btn-remove" class="toolbar-btn text-red-400" title="Xóa">
+      ✕
+    </button>
+    <div class="flex-1"></div>
+    <button id="btn-settings" class="toolbar-btn" title="Cài đặt">
+      ⚙
+    </button>
+  </header>
+
+  <!-- Filter bar -->
+  <div class="flex items-center gap-3 px-3 py-1.5 bg-zinc-850 border-b border-zinc-700 text-sm shrink-0">
+    <input
+      id="search-input"
+      type="search"
+      placeholder="Lọc torrent…"
+      class="bg-zinc-700 border border-zinc-600 rounded px-2 py-1 w-64 text-sm focus:outline-none focus:border-blue-500"
+    />
+    <span id="status-label" class="text-zinc-400 ml-auto">0 torrent</span>
+  </div>
+
+  <!-- Torrent table -->
+  <div class="flex-1 overflow-auto">
+    <table id="torrent-table" class="torrent-table w-full text-sm">
+      <thead class="sticky top-0 bg-zinc-800 z-10">
+        <tr>
+          <th class="col-name">Tên</th>
+          <th class="col-size">Kích thước</th>
+          <th class="col-progress">Tiến độ</th>
+          <th class="col-status">Trạng thái</th>
+          <th class="col-down">↓ Tốc độ</th>
+          <th class="col-up">↑ Tốc độ</th>
+          <th class="col-peers">Peers</th>
+          <th class="col-eta">Còn lại</th>
+        </tr>
+      </thead>
+      <tbody id="torrent-tbody">
+        <!-- rows rendered by JS -->
+      </tbody>
+    </table>
+    <div id="empty-state" class="hidden flex flex-col items-center justify-center h-full text-zinc-500 gap-2">
+      <p class="text-lg">Chưa có torrent nào</p>
+      <p class="text-sm">Nhấn <strong>Magnet</strong> hoặc <strong>.torrent</strong> để bắt đầu</p>
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <footer class="flex items-center gap-4 px-3 py-1 bg-zinc-800 border-t border-zinc-700 text-xs text-zinc-400 shrink-0">
+    <span id="global-down">↓ 0 B/s</span>
+    <span id="global-up">↑ 0 B/s</span>
+    <span class="ml-auto" id="global-peers">Peers: 0</span>
+  </footer>
+
+  <!-- Add magnet dialog -->
+  <dialog id="magnet-dialog" class="dialog">
+    <form method="dialog" class="dialog-content">
+      <h2 class="text-base font-semibold mb-3">Thêm Magnet Link</h2>
+      <input
+        id="magnet-input"
+        type="text"
+        placeholder="magnet:?xt=urn:btih:…"
+        class="w-full bg-zinc-700 border border-zinc-600 rounded px-3 py-2 text-sm mb-4 focus:outline-none focus:border-blue-500"
+        required
+      />
+      <div class="flex justify-end gap-2">
+        <button type="button" id="magnet-cancel" class="btn-secondary">Hủy</button>
+        <button type="submit" class="btn-primary">Thêm</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="js/utils.js"></script>
+  <script src="js/torrent-table.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

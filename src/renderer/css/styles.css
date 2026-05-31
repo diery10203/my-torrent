@@ -1,0 +1,161 @@
+/* qBittorrent-inspired table layout */
+
+.torrent-table {
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.torrent-table thead th {
+  text-align: left;
+  padding: 6px 10px;
+  font-weight: 600;
+  color: #a1a1aa;
+  border-bottom: 1px solid #3f3f46;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.torrent-table tbody tr {
+  border-bottom: 1px solid #27272a;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.torrent-table tbody tr:hover {
+  background: #27272a;
+}
+
+.torrent-table tbody tr.selected {
+  background: #1e3a5f;
+}
+
+.torrent-table tbody td {
+  padding: 5px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Column widths */
+.col-name    { width: 35%; }
+.col-size    { width: 8%; }
+.col-progress{ width: 14%; }
+.col-status  { width: 10%; }
+.col-down    { width: 8%; }
+.col-up      { width: 8%; }
+.col-peers   { width: 6%; }
+.col-eta     { width: 11%; }
+
+/* Progress bar */
+.progress-bar {
+  height: 14px;
+  background: #3f3f46;
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #3b82f6);
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.progress-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 0 3px rgba(0,0,0,0.8);
+}
+
+/* Toolbar buttons */
+.toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  background: #3f3f46;
+  color: #e4e4e7;
+  border: 1px solid #52525b;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.toolbar-btn:hover {
+  background: #52525b;
+}
+
+.toolbar-btn:active {
+  background: #27272a;
+}
+
+/* Dialog */
+dialog.dialog {
+  border: none;
+  border-radius: 8px;
+  padding: 0;
+  background: #27272a;
+  color: #f4f4f5;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+
+dialog.dialog::backdrop {
+  background: rgba(0,0,0,0.6);
+}
+
+.dialog-content {
+  padding: 20px;
+  min-width: 420px;
+}
+
+.btn-primary {
+  padding: 6px 16px;
+  border-radius: 4px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  border: none;
+}
+
+.btn-primary:hover {
+  background: #1d4ed8;
+}
+
+.btn-secondary {
+  padding: 6px 16px;
+  border-radius: 4px;
+  background: #3f3f46;
+  color: #e4e4e7;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid #52525b;
+}
+
+.btn-secondary:hover {
+  background: #52525b;
+}
+
+/* Status badges */
+.badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.badge-downloading { background: #1e3a5f; color: #93c5fd; }
+.badge-seeding     { background: #14532d; color: #86efac; }
+.badge-paused      { background: #3f3f46; color: #a1a1aa; }
+.badge-completed   { background: #14532d; color: #86efac; }
+.badge-error       { background: #450a0a; color: #fca5a5; }
