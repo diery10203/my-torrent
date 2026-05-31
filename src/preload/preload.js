@@ -1,52 +1,91 @@
+/**
+ * Preload script — phải self-contained khi sandbox: true.
+ * Không dùng require('path') hay require file ngoài (sandbox chặn Node builtins).
+ * Giữ đồng bộ với src/shared/ipc-channels.js
+ */
 const { contextBridge, ipcRenderer } = require('electron');
 
-const channels = {
-  TORRENT_ADD: 'torrent:add',
-  TORRENT_REMOVE: 'torrent:remove',
-  TORRENT_PAUSE: 'torrent:pause',
-  TORRENT_RESUME: 'torrent:resume',
-  TORRENT_LIST: 'torrent:list',
-  TORRENT_SELECT_DOWNLOAD_DIR: 'torrent:select-download-dir',
-  TORRENT_UPDATE: 'torrent:update',
-  TORRENT_ADDED: 'torrent:added',
-  TORRENT_REMOVED: 'torrent:removed',
-  TORRENT_ERROR: 'torrent:error',
+const CH = {
+  ADD_TORRENT: 'api:add-torrent',
+  CONTROL_TORRENT: 'api:control-torrent',
+  LIST_TORRENTS: 'api:list-torrents',
+  GET_FILE_TREE: 'api:get-file-tree',
+  TOGGLE_FILE: 'api:toggle-file',
+  OPEN_TORRENT_FILE: 'api:open-torrent-file',
+  SELECT_DOWNLOAD_DIR: 'api:select-download-dir',
+  GET_DEFAULT_DOWNLOAD_DIR: 'api:get-default-download-dir',
+  OPEN_TORRENT_FOLDER: 'api:open-torrent-folder',
+  TORRENT_UPDATE: 'api:torrent-update',
+  METADATA_READY: 'api:metadata-ready',
+  TORRENT_REMOVED: 'api:torrent-removed',
+  TORRENT_ERROR: 'api:torrent-error',
+  FILE_SELECTION: 'api:file-selection',
+  TORRENT_PENDING: 'api:torrent-pending',
 };
 
-/** @type {import('./preload.d.ts').ElectronAPI} */
-const api = {
-  torrent: {
-    list: () => ipcRenderer.invoke(channels.TORRENT_LIST),
-    add: (options) => ipcRenderer.invoke(channels.TORRENT_ADD, options),
-    remove: (infoHash) => ipcRenderer.invoke(channels.TORRENT_REMOVE, infoHash),
-    pause: (infoHash) => ipcRenderer.invoke(channels.TORRENT_PAUSE, infoHash),
-    resume: (infoHash) => ipcRenderer.invoke(channels.TORRENT_RESUME, infoHash),
-    selectDownloadDir: () => ipcRenderer.invoke(channels.TORRENT_SELECT_DOWNLOAD_DIR),
+const INVOKE = new Set([
+  CH.ADD_TORRENT,
+  CH.CONTROL_TORRENT,
+  CH.LIST_TORRENTS,
+  CH.GET_FILE_TREE,
+  CH.TOGGLE_FILE,
+  CH.OPEN_TORRENT_FILE,
+  CH.SELECT_DOWNLOAD_DIR,
+  CH.GET_DEFAULT_DOWNLOAD_DIR,
+  CH.OPEN_TORRENT_FOLDER,
+]);
 
-    onUpdate: (callback) => {
-      const listener = (_event, torrents) => callback(torrents);
-      ipcRenderer.on(channels.TORRENT_UPDATE, listener);
-      return () => ipcRenderer.removeListener(channels.TORRENT_UPDATE, listener);
-    },
+const INCOMING = new Set([
+  CH.TORRENT_UPDATE,
+  CH.METADATA_READY,
+  CH.TORRENT_REMOVED,
+  CH.TORRENT_ERROR,
+  CH.FILE_SELECTION,
+  CH.TORRENT_PENDING,
+]);
 
-    onAdded: (callback) => {
-      const listener = (_event, torrent) => callback(torrent);
-      ipcRenderer.on(channels.TORRENT_ADDED, listener);
-      return () => ipcRenderer.removeListener(channels.TORRENT_ADDED, listener);
-    },
+function invoke(channel, ...args) {
+  if (!INVOKE.has(channel)) throw new Error(`IPC invoke bị chặn: ${channel}`);
+  return ipcRenderer.invoke(channel, ...args);
+}
 
-    onRemoved: (callback) => {
-      const listener = (_event, infoHash) => callback(infoHash);
-      ipcRenderer.on(channels.TORRENT_REMOVED, listener);
-      return () => ipcRenderer.removeListener(channels.TORRENT_REMOVED, listener);
-    },
+function subscribe(channel, callback) {
+  if (!INCOMING.has(channel)) throw new Error(`IPC listen bị chặn: ${channel}`);
+  const listener = (_event, payload) => callback(payload);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+}
 
-    onError: (callback) => {
-      const listener = (_event, payload) => callback(payload);
-      ipcRenderer.on(channels.TORRENT_ERROR, listener);
-      return () => ipcRenderer.removeListener(channels.TORRENT_ERROR, listener);
-    },
-  },
-};
+contextBridge.exposeInMainWorld('api', {
+  addTorrent: (id, downloadPath) => invoke(CH.ADD_TORRENT, id, downloadPath),
 
-contextBridge.exposeInMainWorld('electronAPI', api);
+  controlTorrent: (infoHash, action, options = {}) =>
+    invoke(CH.CONTROL_TORRENT, infoHash, action, options),
+
+  listTorrents: () => invoke(CH.LIST_TORRENTS),
+
+  getFileTree: (infoHash) => invoke(CH.GET_FILE_TREE, infoHash),
+
+  toggleFileSelection: (infoHash, fileIndex, shouldDownload) =>
+    invoke(CH.TOGGLE_FILE, infoHash, fileIndex, shouldDownload),
+
+  openTorrentFile: () => invoke(CH.OPEN_TORRENT_FILE),
+
+  selectDownloadDir: () => invoke(CH.SELECT_DOWNLOAD_DIR),
+
+  getDefaultDownloadDir: () => invoke(CH.GET_DEFAULT_DOWNLOAD_DIR),
+
+  openTorrentFolder: (infoHash) => invoke(CH.OPEN_TORRENT_FOLDER, infoHash),
+
+  onTorrentUpdate: (cb) => subscribe(CH.TORRENT_UPDATE, cb),
+
+  onMetadataReady: (cb) => subscribe(CH.METADATA_READY, cb),
+
+  onTorrentRemoved: (cb) => subscribe(CH.TORRENT_REMOVED, cb),
+
+  onError: (cb) => subscribe(CH.TORRENT_ERROR, cb),
+
+  onFileSelectionChanged: (cb) => subscribe(CH.FILE_SELECTION, cb),
+
+  onTorrentPending: (cb) => subscribe(CH.TORRENT_PENDING, cb),
+});

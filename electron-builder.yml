@@ -18,6 +18,19 @@ asar: true
 asarUnpack:
   - "**/*.node"
 
+# ── Protocol & file associations ─────────────────────────────────────────────
+protocols:
+  - name: BitTorrent Magnet
+    schemes:
+      - magnet
+
+fileAssociations:
+  - ext: torrent
+    name: BitTorrent File
+    description: BitTorrent torrent file
+    role: Editor
+    mimeType: application/x-bittorrent
+
 # ── macOS ──────────────────────────────────────────────────────────────────────
 mac:
   category: public.app-category.utilities
