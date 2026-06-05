@@ -1,0 +1,18 @@
+{
+  "watch": [
+    "src/main",
+    "src/preload",
+    "src/shared",
+    "src/renderer",
+    "scripts",
+    "electron-builder.yml"
+  ],
+  "ext": "js,json,html,css,yml",
+  "ignore": ["dist/**", "node_modules/**", "**/*.map"],
+  "exec": "node scripts/run-electron.js",
+  "delay": 400,
+  "signal": "SIGTERM",
+  "env": {
+    "NODE_ENV": "development"
+  }
+}

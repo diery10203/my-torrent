@@ -71,24 +71,12 @@ function parseArgvForTorrents(argv) {
   return results;
 }
 
-function registerAsMagnetHandler() {
-  if (process.defaultApp) {
-    if (process.argv.length >= 2) {
-      app.setAsDefaultProtocolClient('magnet', process.execPath, [
-        path.resolve(process.argv[1]),
-      ]);
-    }
-  } else {
-    app.setAsDefaultProtocolClient('magnet');
-  }
-}
-
 /**
- * @param {(source: string) => void} handleIncoming
+ * open-url / open-file được xử lý tại index.js (buffer trước whenReady).
+ * Đăng ký magnet:// handler: main.js → registerPackagedProtocolHandlers() (chỉ app.isPackaged).
  */
 function setupProtocolListeners(_handleIncoming) {
-  registerAsMagnetHandler();
-  // open-url / open-file được xử lý tại index.js (buffer trước whenReady)
+  /* listeners ở index.js; đăng ký protocol ở main.js */
 }
 
 /**

@@ -1,0 +1,855 @@
+/**
+ * Liquid Glassmorphism — qBittorrent-style mock (tối giản, tối, sương mù)
+ * Dùng với src/index.html (preview hoặc Electron loadFile).
+ */
+
+/* ── Tokens ───────────────────────────────────────────────────────────────── */
+:root {
+  --bg-glass: rgba(20, 20, 25, 0.4);
+  --glass-blur: blur(25px) saturate(200%);
+  --card-bg: rgba(255, 255, 255, 0.03);
+  --card-border: rgba(255, 255, 255, 0.08);
+  --text: #e8e8ec;
+  --text-muted: #8b8d96;
+  --text-dim: #5c5e66;
+  --accent: #00f2fe;
+  --accent-deep: #3d8ec9;
+  --accent-glow: rgba(0, 242, 254, 0.5);
+  --row-hover: rgba(255, 255, 255, 0.05);
+  --row-selected: rgba(0, 242, 254, 0.08);
+  --titlebar-h: 40px;
+  --sidebar-w: 200px;
+  --statusbar-h: 28px;
+  --radius: 10px;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --ease: 0.3s ease;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Nền app — chiều sâu sương mù (OS / wallpaper hiện phía sau khi transparent) */
+body,
+.app-shell {
+  background: var(--bg-glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-height: 0;
+}
+
+/* Lớp gradient trang trí (tùy chọn, dưới panel) */
+.app-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 80% 60% at 10% 20%, rgba(0, 242, 254, 0.07) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 50% at 90% 80%, rgba(155, 92, 255, 0.06) 0%, transparent 50%),
+    #0e0e12;
+  pointer-events: none;
+}
+
+/* ── Glass card ───────────────────────────────────────────────────────────── */
+.glass-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.glass-card--flat {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.glass-card--inset {
+  border-radius: var(--radius) var(--radius) 0 0;
+  border-bottom: none;
+}
+
+/* ── #titlebar ──────────────────────────────────────────────────────────────── */
+#titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--titlebar-h);
+  flex-shrink: 0;
+  padding: 0 0 0 14px;
+  -webkit-app-region: drag;
+  user-select: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+}
+
+.titlebar-leading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.titlebar-logo {
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.titlebar-name {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.titlebar-controls {
+  display: flex;
+  align-items: stretch;
+  -webkit-app-region: no-drag;
+}
+
+/* Window controls — thiết kế CSS thuần */
+.win-ctrl {
+  width: 46px;
+  height: var(--titlebar-h);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+  transition: background var(--ease);
+}
+
+.win-ctrl::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.win-ctrl-minimize::before {
+  width: 10px;
+  height: 1px;
+  background: var(--text-muted);
+}
+
+.win-ctrl-maximize::before {
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--text-muted);
+  background: transparent;
+}
+
+.win-ctrl-maximize.is-maximized::before {
+  width: 8px;
+  height: 8px;
+  border-width: 2px;
+  border-radius: 1px;
+}
+
+.win-ctrl-close::before {
+  width: 12px;
+  height: 12px;
+  background: none;
+  background-image:
+    linear-gradient(45deg, transparent 46%, var(--text-muted) 46%, var(--text-muted) 54%, transparent 54%),
+    linear-gradient(-45deg, transparent 46%, var(--text-muted) 46%, var(--text-muted) 54%, transparent 54%);
+}
+
+.win-ctrl:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.win-ctrl-close:hover {
+  background: #e81123;
+}
+
+.win-ctrl-close:hover::before {
+  background-image:
+    linear-gradient(45deg, transparent 46%, #fff 46%, #fff 54%, transparent 54%),
+    linear-gradient(-45deg, transparent 46%, #fff 46%, #fff 54%, transparent 54%);
+}
+
+/* macOS: traffic-light style (platform-darwin trên html) */
+html.platform-darwin .win-ctrl {
+  width: 14px;
+  height: 14px;
+  margin: 0 6px;
+  border-radius: 50%;
+}
+
+html.platform-darwin .win-ctrl::before {
+  display: none;
+}
+
+html.platform-darwin .win-ctrl-minimize { background: #febc2e; }
+html.platform-darwin .win-ctrl-maximize { background: #28c840; }
+html.platform-darwin .win-ctrl-close { background: #ff5f57; }
+
+/* macOS: một cụm nút bên trái (thay traffic lights hệ thống đã ẩn) */
+html.platform-darwin #titlebar {
+  justify-content: flex-start;
+  gap: 10px;
+  padding-left: 10px;
+}
+
+html.platform-darwin .titlebar-controls {
+  flex-direction: row-reverse;
+  flex-shrink: 0;
+  order: -1;
+  padding: 0;
+}
+
+html.platform-darwin .titlebar-leading {
+  flex: 1;
+  min-width: 0;
+}
+
+[data-no-drag] {
+  -webkit-app-region: no-drag;
+}
+
+/* ── #main-layout ─────────────────────────────────────────────────────────── */
+#main-layout {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  flex: 1;
+  min-height: 0;
+  gap: 8px;
+  padding: 8px;
+  overflow: hidden;
+}
+
+/* Sidebar */
+#sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 8px;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--ease);
+}
+
+.sidebar-item:hover {
+  background: var(--row-hover);
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.04);
+}
+
+.sidebar-item.is-active {
+  background: var(--row-selected);
+  color: var(--accent);
+  border-color: rgba(0, 242, 254, 0.15);
+  box-shadow: inset 0 0 20px rgba(0, 242, 254, 0.04);
+}
+
+.sidebar-icon {
+  width: 18px;
+  text-align: center;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.sidebar-label {
+  flex: 1;
+}
+
+.sidebar-badge {
+  font-size: 11px;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 2px 8px;
+  border-radius: 100px;
+}
+
+.sidebar-item.is-active .sidebar-badge {
+  color: var(--accent);
+  background: rgba(0, 242, 254, 0.1);
+}
+
+/* Torrent panel */
+.torrent-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  position: relative;
+}
+
+.torrent-panel.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -4px;
+}
+
+.torrent-row.hidden-row {
+  display: none;
+}
+
+.table-header {
+  flex-shrink: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.table-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* ── Table ────────────────────────────────────────────────────────────────── */
+.torrent-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.torrent-table thead th {
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--card-border);
+}
+
+.torrent-table tbody td {
+  padding: 10px 14px;
+  vertical-align: middle;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.col-name { width: 36%; }
+.col-size { width: 14%; color: var(--text-muted); }
+.col-progress { width: 26%; }
+.col-speed {
+  width: 24%;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.torrent-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Hàng bảng — hover mượt */
+.torrent-row {
+  transition: all var(--ease);
+  cursor: default;
+  user-select: none;
+}
+
+.torrent-row:hover {
+  background: var(--row-hover);
+}
+
+.torrent-row.is-selected {
+  background: var(--row-selected);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.torrent-row:hover .torrent-name {
+  color: #fff;
+}
+
+/* ── Progress bar — gradient lỏng Cyan / Neon ───────────────────────────── */
+.col-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.progress-track {
+  flex: 1;
+  height: 6px;
+  min-width: 80px;
+  border-radius: 100px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    var(--accent-deep) 0%,
+    var(--accent) 45%,
+    #7df9ff 100%
+  );
+  box-shadow: 0 0 8px var(--accent-glow);
+  transition: width var(--ease);
+}
+
+.progress-fill.is-complete {
+  background: linear-gradient(90deg, #3dbb6d 0%, #5ce08a 100%);
+  box-shadow: 0 0 8px rgba(92, 224, 138, 0.45);
+}
+
+.progress-fill.is-paused {
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: none;
+}
+
+.progress-pct {
+  font-size: 11px;
+  color: var(--text-dim);
+  min-width: 36px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Status bar ───────────────────────────────────────────────────────────── */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: var(--statusbar-h);
+  padding: 0 14px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+}
+
+.status-item--dim {
+  margin-left: auto;
+  color: var(--text-dim);
+}
+
+/* ── Scrollbar tối giản ───────────────────────────────────────────────────── */
+.glass-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.glass-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.glass-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.glass-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 100px;
+}
+
+.glass-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* ── Toolbar ──────────────────────────────────────────────────────────────── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  flex-shrink: 0;
+  border-left: none;
+  border-right: none;
+  -webkit-app-region: no-drag;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbar-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--ease);
+}
+
+.icon-btn:hover {
+  background: var(--row-hover);
+  color: var(--text);
+  border-color: var(--card-border);
+}
+
+/* ── Drop overlay ─────────────────────────────────────────────────────────── */
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(14, 14, 18, 0.72);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  pointer-events: none;
+}
+
+.drop-overlay.hidden {
+  display: none;
+}
+
+.drop-overlay-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.drop-overlay-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ── Empty state ──────────────────────────────────────────────────────────── */
+.empty-state {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.empty-state.hidden {
+  display: none;
+}
+
+.empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text);
+}
+
+.empty-hint {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ── Dialogs ────────────────────────────────────────────────────────────── */
+dialog.dialog {
+  position: fixed;
+  inset: 0;
+  width: max-content;
+  height: max-content;
+  max-width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  margin: auto;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text);
+  background: transparent;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+}
+
+dialog.dialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+dialog.dialog-add-torrent {
+  max-width: min(680px, calc(100vw - 24px));
+}
+
+.dialog-body {
+  padding: 20px;
+  min-width: 400px;
+}
+
+.dialog-wide {
+  min-width: 520px;
+}
+
+.dialog-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+
+.dialog-input {
+  width: 100%;
+  padding: 9px 11px;
+  margin-bottom: 14px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+.dialog-input:focus {
+  border-color: var(--accent);
+}
+
+.form-group { margin-bottom: 14px; }
+
+.form-label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.source-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.source-preview {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: rgba(0, 0, 0, 0.2);
+  max-height: 72px;
+  overflow-y: auto;
+}
+
+.source-row .btn-compact {
+  flex-shrink: 0;
+  align-self: center;
+  white-space: nowrap;
+  padding: 8px 14px;
+}
+
+.folder-row {
+  display: flex;
+  gap: 8px;
+}
+
+.folder-input {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.btn {
+  padding: 7px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid var(--card-border);
+  transition: all var(--ease);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent-deep), var(--accent));
+  border-color: transparent;
+  color: #0a0c10;
+  font-weight: 600;
+}
+
+.btn-primary:hover {
+  filter: brightness(1.08);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: transparent;
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
+.btn-sm { font-size: 11px; padding: 3px 10px; }
+
+.add-file-tree {
+  min-height: 100px;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.file-tree-status {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.file-tree-status.loading { color: var(--accent); }
+.file-tree-status.error { color: #e05c5c; }
+
+.tree-node {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  line-height: 22px;
+}
+
+.tree-toggle {
+  width: 14px;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.tree-toggle.empty { visibility: hidden; }
+
+.tree-checkbox {
+  width: 14px;
+  accent-color: var(--accent);
+}
+
+.tree-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-size {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.tree-children .tree-node.collapsed + .tree-children,
+.tree-branch > .tree-children:has(+ .collapsed) {
+  display: block;
+}
+
+/* ── Torrent row context menu ─────────────────────────────────────────────── */
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 200px;
+  padding: 6px;
+  border-radius: var(--radius);
+  background: rgba(28, 28, 34, 0.92);
+  border: 1px solid var(--card-border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  user-select: none;
+}
+
+.context-menu.hidden {
+  display: none;
+}
+
+.context-menu-item {
+  display: block;
+  width: 100%;
+  padding: 7px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: default;
+}
+
+.context-menu-item:hover:not(:disabled) {
+  background: var(--row-hover);
+}
+
+.context-menu-item:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.context-menu-item--danger {
+  color: #ff6b7a;
+}
+
+.context-menu-item--danger:hover:not(:disabled) {
+  background: rgba(255, 107, 122, 0.12);
+}
+
+.context-menu-sep {
+  height: 1px;
+  margin: 5px 8px;
+  background: var(--card-border);
+}

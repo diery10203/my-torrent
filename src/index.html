@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Torrent</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app" class="app-shell">
+
+    <header id="titlebar" class="titlebar glass-card glass-card--flat">
+      <div class="titlebar-leading">
+        <img src="../assets/icon.png" alt="" class="titlebar-logo" width="18" height="18" />
+        <span class="titlebar-name">My Torrent</span>
+      </div>
+      <div class="titlebar-controls" data-no-drag>
+        <button type="button" class="win-ctrl win-ctrl-minimize" title="Thu nhỏ" aria-label="Thu nhỏ"></button>
+        <button type="button" class="win-ctrl win-ctrl-maximize" title="Phóng to" aria-label="Phóng to"></button>
+        <button type="button" class="win-ctrl win-ctrl-close" title="Đóng" aria-label="Đóng"></button>
+      </div>
+    </header>
+
+    <header class="toolbar glass-card glass-card--flat" data-no-drag>
+      <div class="toolbar-group">
+        <button type="button" id="btn-add-magnet" class="icon-btn" title="Thêm Magnet Link" aria-label="Thêm Magnet">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M13 11h6v2h-6v6h-2v-6H5v-2h6V5h2v6z"/></svg>
+        </button>
+        <button type="button" id="btn-add-torrent" class="icon-btn" title="Thêm file .torrent" aria-label="Thêm .torrent">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 2 5 5h-5V4zM8 13h8v2H8v-2zm0 4h5v2H8v-2z"/></svg>
+        </button>
+      </div>
+      <span class="toolbar-hint">Kéo thả .torrent hoặc magnet vào bảng</span>
+    </header>
+
+    <div id="main-layout" class="main-layout">
+
+      <aside id="sidebar" class="sidebar glass-card">
+        <nav class="sidebar-nav" aria-label="Bộ lọc torrent">
+          <button type="button" class="sidebar-item is-active" data-filter="all">
+            <span class="sidebar-icon" aria-hidden="true">◉</span>
+            <span class="sidebar-label">All</span>
+            <span class="sidebar-badge">0</span>
+          </button>
+          <button type="button" class="sidebar-item" data-filter="downloading">
+            <span class="sidebar-icon" aria-hidden="true">↓</span>
+            <span class="sidebar-label">Downloading</span>
+            <span class="sidebar-badge">0</span>
+          </button>
+          <button type="button" class="sidebar-item" data-filter="seeding">
+            <span class="sidebar-icon" aria-hidden="true">↑</span>
+            <span class="sidebar-label">Seeding</span>
+            <span class="sidebar-badge">0</span>
+          </button>
+        </nav>
+      </aside>
+
+      <section id="torrent-panel" class="torrent-panel glass-card">
+        <div id="drop-overlay" class="drop-overlay hidden" aria-hidden="true">
+          <p class="drop-overlay-title">Thả để thêm torrent</p>
+          <p class="drop-overlay-hint">File .torrent hoặc magnet link</p>
+        </div>
+
+        <div class="table-header glass-card glass-card--inset">
+          <table class="torrent-table" aria-label="Tiêu đề cột torrent">
+            <thead>
+              <tr>
+                <th class="col-name">Name</th>
+                <th class="col-size">Size</th>
+                <th class="col-progress">Progress</th>
+                <th class="col-speed">Speed</th>
+              </tr>
+            </thead>
+          </table>
+        </div>
+
+        <div class="table-body glass-scroll">
+          <table class="torrent-table">
+            <tbody id="torrent-tbody"></tbody>
+          </table>
+          <div id="empty-state" class="empty-state">
+            <p class="empty-title">Chưa có torrent</p>
+            <p class="empty-hint">Nhấn <strong>+</strong> hoặc <strong>📄</strong> trên thanh công cụ, hoặc kéo thả file vào đây</p>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <footer class="statusbar glass-card glass-card--flat">
+      <span class="status-item">↓ 0 B/s</span>
+      <span class="status-item">↑ 0 B/s</span>
+      <span class="status-item status-item--dim">0 torrent · 0 active</span>
+    </footer>
+
+  </div>
+
+  <dialog id="magnet-dialog" class="dialog glass-card glass-card--elevated">
+    <form method="dialog" class="dialog-body">
+      <h2 class="dialog-title">Dán Magnet Link</h2>
+      <input id="magnet-input" type="text" class="dialog-input" placeholder="magnet:?xt=urn:btih:…" required />
+      <div class="dialog-actions">
+        <button type="button" id="magnet-cancel" class="btn btn-secondary">Hủy</button>
+        <button type="submit" value="confirm" class="btn btn-primary">Tiếp tục</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="add-torrent-dialog" class="dialog dialog-add-torrent glass-card glass-card--elevated">
+    <form method="dialog" class="dialog-body dialog-wide glass-scroll">
+      <h2 class="dialog-title">Thêm Torrent</h2>
+      <div class="form-group">
+        <label class="form-label">Nguồn</label>
+        <div class="source-row">
+          <p id="add-source-preview" class="source-preview"></p>
+          <button type="button" id="add-change-source-btn" class="btn btn-secondary btn-compact" title="Chọn torrent khác">Đổi…</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="add-download-path">Lưu vào thư mục</label>
+        <div class="folder-row">
+          <input id="add-download-path" type="text" class="dialog-input folder-input" readonly placeholder="Chọn thư mục…" />
+          <button type="button" id="add-browse-btn" class="btn btn-secondary">Chọn…</button>
+        </div>
+      </div>
+      <div class="form-group add-files-group">
+        <div class="add-files-header">
+          <label class="form-label">File tải về</label>
+          <div class="add-files-actions">
+            <button type="button" id="add-select-all-btn" class="btn btn-ghost btn-sm">Chọn tất cả</button>
+            <button type="button" id="add-select-none-btn" class="btn btn-ghost btn-sm">Bỏ chọn</button>
+          </div>
+        </div>
+        <p id="add-file-tree-status" class="file-tree-status loading">Đang tải danh sách file…</p>
+        <div id="add-file-tree" class="file-tree add-file-tree glass-scroll" role="tree"></div>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" id="add-cancel-btn" class="btn btn-secondary">Hủy</button>
+        <button type="submit" value="confirm" class="btn btn-primary">Bắt đầu tải</button>
+      </div>
+    </form>
+  </dialog>
+
+  <nav id="torrent-context-menu" class="context-menu hidden" role="menu" aria-hidden="true"></nav>
+
+  <script src="renderer.js"></script>
+  <script src="add-ui.js"></script>
+</body>
+</html>

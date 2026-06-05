@@ -25,7 +25,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Renderer (src/renderer/)                               │
+│  Renderer (src/index.html + JS)                         │
 │  HTML/CSS/JS — không có quyền Node.js                   │
 │  Gọi window.api.*                                       │
 └──────────────────────┬──────────────────────────────────┘
@@ -50,7 +50,7 @@ my-torrent/
 ├── src/
 │   ├── main/                  # Main process
 │   │   ├── index.js           # Entry point
-│   │   ├── window.js          # BrowserWindow
+│   │   ├── main.js            # BrowserWindow (glass)
 │   │   ├── protocol.js        # Magnet / .torrent handler
 │   │   ├── ipc/
 │   │   │   ├── channels.js
@@ -61,10 +61,10 @@ my-torrent/
 │   │       └── file-tree.js
 │   ├── preload/
 │   │   └── preload.js         # contextBridge → window.api
-│   ├── renderer/              # UI
-│   │   ├── index.html
-│   │   ├── css/styles.css
-│   │   └── js/renderer.js
+│   ├── index.html             # UI (glass)
+│   ├── style.css
+│   ├── renderer.js            # Bảng torrent + IPC
+│   ├── add-ui.js              # Thêm magnet / .torrent
 │   └── shared/
 │       └── ipc-channels.js    # Tên channel IPC (main)
 ├── assets/                    # Icons, entitlements macOS
@@ -81,10 +81,17 @@ my-torrent/
 
 ```bash
 npm install
-npm start
+npm run dev
 ```
 
-DevTools tự mở khi `NODE_ENV=development`.
+`npm run dev` dùng **nodemon** — tự khởi động lại app khi sửa file trong `src/`.
+
+```bash
+npm run dev:log   # dev + --enable-logging (DevTools)
+npm start         # chạy một lần, không watch
+```
+
+DevTools tự mở khi `NODE_ENV=development` (mặc định với `npm run dev`).
 
 ## Build thành app cài đặt
 
@@ -178,8 +185,9 @@ Click một dòng trên bảng → bottom panel hiện tab **Tệp tin** (tree v
 
 | Lệnh | Mô tả |
 |------|-------|
-| `npm start` | Chạy app |
-| `npm run dev` | Chạy với logging |
+| `npm start` | Chạy app (không tự reload) |
+| `npm run dev` | Dev + nodemon (tự restart khi đổi code) |
+| `npm run dev:log` | Dev + logging Electron |
 | `npm run build:mac` | Build macOS |
 | `npm run build:win` | Build Windows |
 | `npm run rebuild` | Rebuild native modules |

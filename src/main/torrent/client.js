@@ -1,5 +1,6 @@
 const path = require('path');
 const { app } = require('electron');
+const { CLIENT_OPTS } = require('./torrent-config');
 
 let client = null;
 let WebTorrentClass = null;
@@ -19,7 +20,7 @@ function getDefaultDownloadPath() {
 async function getClient() {
   if (!client) {
     const WebTorrent = await loadWebTorrent();
-    client = new WebTorrent();
+    client = new WebTorrent(CLIENT_OPTS);
   }
   return client;
 }

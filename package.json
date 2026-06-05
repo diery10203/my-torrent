@@ -7,7 +7,8 @@
   "license": "MIT",
   "scripts": {
     "start": "node scripts/run-electron.js",
-    "dev": "node scripts/run-electron.js --enable-logging",
+    "dev": "nodemon",
+    "dev:log": "nodemon --exec \"node scripts/run-electron.js --enable-logging\"",
     "build": "electron-builder",
     "build:mac": "electron-builder --mac",
     "build:mac:arm64": "electron-builder --mac --arm64",
@@ -17,11 +18,13 @@
     "rebuild": "electron-builder install-app-deps"
   },
   "dependencies": {
+    "parse-torrent": "^11.0.21",
     "webtorrent": "^2.8.5"
   },
   "devDependencies": {
     "electron": "^35.0.0",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "nodemon": "^3.1.14"
   },
   "engines": {
     "node": ">=20.0.0"

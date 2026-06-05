@@ -3,6 +3,7 @@ const path = require('path');
 const { EventEmitter } = require('events');
 const { getClient, destroyClient, getDefaultDownloadPath } = require('./client');
 const { buildFileTree, refreshFileTreeVolatile } = require('./file-tree');
+const { TORRENT_OPTS } = require('./torrent-config');
 const { loadSession, saveSession } = require('./session-store');
 
 const METADATA_TIMEOUT_MS = 120_000;
@@ -36,6 +37,11 @@ class TorrentManager extends EventEmitter {
      * @type {Map<string, { root: object, leaves: object[], selection: Uint8Array }>}
      */
     this._fileTreeCache = new Map();
+    /**
+     * Mẫu byte đã tải (file được chọn) — tính tốc độ hiệu dụng khớp % progress.
+     * @type {Map<string, { downloaded: number, time: number, lastSpeed?: number }>}
+     */
+    this._transferSamples = new Map();
     /** @type {ReturnType<typeof setInterval> | null} */
     this._pollTimer = null;
     /** @type {ReturnType<typeof setTimeout> | null} */
@@ -54,6 +60,11 @@ class TorrentManager extends EventEmitter {
     this._restoring = new Set();
     /** @type {Map<string, object>} */
     this._restoringMeta = new Map();
+    /** Torrent tạm (dialog thêm) — ẩn khỏi danh sách cho đến khi xác nhận */
+    /** @type {Set<string>} */
+    this._previews = new Set();
+    /** @type {Promise<typeof import('parse-torrent').default> | null} */
+    this._parseTorrentLoader = null;
     this._ready = false;
   }
 
@@ -77,13 +88,19 @@ class TorrentManager extends EventEmitter {
    * @param {string} [downloadPath] - destination directory (defaults to ~/Downloads/MyTorrent)
    * @returns {Promise<object>} stats snapshot for the newly added torrent
    */
-  async addTorrent(torrentId, downloadPath) {
+  /**
+   * @param {string} torrentId
+   * @param {string} [downloadPath]
+   * @param {{ fileSelection?: boolean[] }} [options]
+   */
+  async addTorrent(torrentId, downloadPath, options = {}) {
     if (!torrentId || typeof torrentId !== 'string') {
       throw new TorrentError('INVALID_INPUT', 'torrentId phải là chuỗi không rỗng');
     }
 
     try {
       const stats = await this._addTorrentWithOptions(torrentId.trim(), downloadPath);
+      await this._applyFileSelectionWhenReady(stats.infoHash, options.fileSelection);
       this.emit('added', stats);
       this._scheduleSessionSave();
       return stats;
@@ -96,6 +113,119 @@ class TorrentManager extends EventEmitter {
       });
       throw classified;
     }
+  }
+
+  /**
+   * Đọc danh sách file từ .torrent (không thêm vào client) hoặc báo cần preview magnet.
+   * @param {string} source
+   */
+  async inspectTorrentSource(source) {
+    this._assertReady();
+    const trimmed = source.trim();
+
+    if (!this._looksLikeTorrentFile(trimmed)) {
+      return {
+        mode: 'magnet',
+        name: this._guessName({ torrentId: trimmed, magnetURI: trimmed }) || 'Magnet link',
+      };
+    }
+
+    const parsed = await this._parseTorrentFile(trimmed);
+    const files = parsed.files.map((f) => ({
+      path: this._normalizeTorrentFilePath(f.path).replace(/\\/g, '/'),
+      length: f.length,
+    }));
+    const { root } = buildFileTree(files);
+
+    return {
+      mode: 'static',
+      name: parsed.name || path.basename(trimmed, '.torrent'),
+      tree: root,
+      fileCount: files.length,
+    };
+  }
+
+  /**
+   * Thêm torrent tạm (paused) để lấy metadata — dùng cho magnet trong dialog.
+   * @param {string} source
+   * @param {string} downloadPath
+   */
+  async prepareTorrentPreview(source, downloadPath) {
+    this._assertReady();
+
+    let hash = null;
+    try {
+      const stats = await this._addTorrentWithOptions(source.trim(), downloadPath, {
+        paused: true,
+        preview: true,
+      });
+      hash = this._normalizeHash(stats.infoHash);
+      this._previews.add(hash);
+
+      const torrent = await this._getTorrentOrThrow(hash);
+      await this._waitForMetadata(torrent);
+
+      if (!this._fileTreeCache.has(hash)) {
+        this._buildAndCacheFileTree(torrent);
+      }
+
+      const tree = await this.getFileTree(hash);
+      return {
+        mode: 'preview',
+        infoHash: hash,
+        name: stats.name,
+        tree,
+        fileCount: torrent.files.length,
+      };
+    } catch (err) {
+      if (hash) {
+        this._previews.delete(hash);
+        await this.removeTorrent(hash, false).catch(() => {});
+      }
+      throw err instanceof TorrentError ? err : this._classifyError(err);
+    }
+  }
+
+  /**
+   * Áp dụng chọn file và bắt đầu tải torrent preview.
+   * @param {string} infoHash
+   * @param {boolean[]} fileSelection
+   */
+  async confirmTorrentPreview(infoHash, fileSelection) {
+    this._assertReady();
+    const hash = this._normalizeHash(infoHash);
+
+    if (!this._previews.has(hash)) {
+      throw new TorrentError('INVALID_PREVIEW', 'Torrent preview không tồn tại hoặc đã hết hạn');
+    }
+
+    const torrent = await this._getTorrentOrThrow(hash);
+    this._applyFileSelection(torrent, fileSelection);
+    this._previews.delete(hash);
+    this._stopped.delete(hash);
+    this._applyResume(torrent);
+
+    const stats = this._buildStats(torrent);
+    this.emit('added', stats);
+    await this._emitStatsUpdate();
+    this._scheduleSessionSave();
+    return stats;
+  }
+
+  /**
+   * Hủy torrent preview (dialog đóng / đổi thư mục).
+   * @param {string} infoHash
+   */
+  async cancelTorrentPreview(infoHash) {
+    this._assertReady();
+    const hash = this._normalizeHash(infoHash);
+
+    if (!this._previews.has(hash)) {
+      return { ok: true, infoHash: hash };
+    }
+
+    this._previews.delete(hash);
+    return this.removeTorrent(hash, false);
   }
 
   /**
@@ -175,8 +305,10 @@ class TorrentManager extends EventEmitter {
 
     this._active.delete(hash);
     this._fileTreeCache.delete(hash);
+    this._transferSamples.delete(hash);
     this._stopped.delete(hash);
     this._torrentSources.delete(hash);
+    this._previews.delete(hash);
 
     if (deleteFiles) {
       await this._deleteFilesFromDisk(savedFiles, savedRoot);
@@ -219,6 +351,8 @@ class TorrentManager extends EventEmitter {
     }
 
     for (const torrent of client.torrents) {
+      const hash = this._normalizeHash(torrent.infoHash);
+      if (this._previews.has(hash)) continue;
       const stats = this._buildStats(torrent);
       byHash.set(stats.infoHash, stats);
     }
@@ -286,6 +420,8 @@ class TorrentManager extends EventEmitter {
       cache.leaves[fileIndex].selected = shouldDownload;
     }
 
+    this._transferSamples.delete(this._normalizeHash(infoHash));
+
     const payload = { infoHash, fileIndex, selected: shouldDownload };
     this.emit('file-selection-changed', payload);
     return payload;
@@ -310,6 +446,8 @@ class TorrentManager extends EventEmitter {
     }
     this._active.clear();
     this._fileTreeCache.clear();
+    this._transferSamples.clear();
+    this._previews.clear();
     this._stopped.clear();
     this._torrentSources.clear();
     this._unavailable.clear();
@@ -415,6 +553,102 @@ class TorrentManager extends EventEmitter {
     return resolved;
   }
 
+  async _loadParseTorrent() {
+    if (!this._parseTorrentLoader) {
+      this._parseTorrentLoader = import('parse-torrent').then((mod) => mod.default || mod);
+    }
+    return this._parseTorrentLoader;
+  }
+
+  _looksLikeTorrentFile(torrentId) {
+    if (/^magnet:\?/i.test(torrentId)) return false;
+    if (torrentId.toLowerCase().endsWith('.torrent')) return true;
+    try {
+      const resolved = path.resolve(torrentId);
+      return fs.existsSync(resolved) && fs.statSync(resolved).isFile();
+    } catch {
+      return false;
+    }
+  }
+
+  async _parseTorrentFile(filePath) {
+    const parseTorrent = await this._loadParseTorrent();
+    const resolved = path.resolve(filePath);
+    const buf = await fs.promises.readFile(resolved);
+    return parseTorrent(buf);
+  }
+
+  _normalizeTorrentFilePath(filePath) {
+    if (Buffer.isBuffer(filePath)) return filePath.toString();
+    if (Array.isArray(filePath)) return filePath.join('/');
+    return String(filePath);
+  }
+
+  /**
+   * @param {import('webtorrent').default.Torrent} torrent
+   */
+  _waitForMetadata(torrent) {
+    if (torrent.metadata) return Promise.resolve();
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new TorrentError(
+          'METADATA_TIMEOUT',
+          'Hết thời gian chờ metadata torrent (magnet link có thể không hợp lệ)'
+        ));
+      }, METADATA_TIMEOUT_MS);
+
+      const done = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+
+      const fail = (err) => {
+        clearTimeout(timer);
+        reject(this._classifyError(err));
+      };
+
+      torrent.once('metadata', done);
+      torrent.once('error', fail);
+    });
+  }
+
+  /**
+   * @param {import('webtorrent').default.Torrent} torrent
+   * @param {boolean[] | undefined} fileSelection
+   */
+  _applyFileSelection(torrent, fileSelection) {
+    if (!fileSelection || fileSelection.length === 0) return;
+
+    const hash = this._normalizeHash(torrent.infoHash);
+    const cache = this._fileTreeCache.get(hash);
+
+    torrent.files.forEach((file, i) => {
+      const want = fileSelection[i] !== false;
+      if (want) file.select();
+      else file.deselect();
+
+      if (cache) {
+        cache.selection[i] = want ? 1 : 0;
+        if (cache.leaves[i]) cache.leaves[i].selected = want;
+      }
+    });
+
+    this._transferSamples.delete(hash);
+  }
+
+  /**
+   * @param {string} infoHash
+   * @param {boolean[] | undefined} fileSelection
+   */
+  async _applyFileSelectionWhenReady(infoHash, fileSelection) {
+    if (!fileSelection || fileSelection.length === 0) return;
+
+    const torrent = await this._getTorrentOrThrow(infoHash);
+    await this._waitForMetadata(torrent);
+    this._applyFileSelection(torrent, fileSelection);
+  }
+
   async _ensureDownloadDir(dirPath) {
     try {
       await fs.promises.mkdir(dirPath, { recursive: true });
@@ -513,13 +747,92 @@ class TorrentManager extends EventEmitter {
   }
 
   /**
+   * Chỉ tính byte / % trên file đang được chọn (WebTorrent mặc định chia cho toàn bộ torrent.length).
+   * @param {import('webtorrent').default.Torrent} torrent
+   * @param {string} infoHash
+   */
+  _getSelectedTransfer(torrent, infoHash) {
+    const hash = this._normalizeHash(infoHash);
+    const files = torrent.files;
+
+    if (!files?.length) {
+      return {
+        totalLength: torrent.length || 0,
+        downloaded: torrent.downloaded || 0,
+      };
+    }
+
+    const cache = this._fileTreeCache.get(hash);
+    let totalLength = 0;
+    let downloaded = 0;
+
+    for (let i = 0; i < files.length; i++) {
+      if (cache && cache.selection[i] === 0) continue;
+      totalLength += files[i].length;
+      downloaded += files[i].downloaded;
+    }
+
+    return { totalLength, downloaded };
+  }
+
+  /**
+   * @param {{ totalLength: number, downloaded: number }} transfer
+   */
+  _percentFromTransfer(transfer) {
+    if (transfer.totalLength <= 0) return transfer.downloaded > 0 ? 100 : 0;
+    const ratio = Math.min(1, transfer.downloaded / transfer.totalLength);
+    return Math.round(ratio * 1000) / 10;
+  }
+
+  /**
+   * @param {import('webtorrent').default.Torrent} torrent
+   * @param {string} infoHash
+   */
+  _isSelectedComplete(torrent, infoHash) {
+    if (torrent.done) return true;
+    const transfer = this._getSelectedTransfer(torrent, infoHash);
+    return transfer.totalLength > 0 && transfer.downloaded >= transfer.totalLength;
+  }
+
+  /**
+   * Tốc độ theo byte file đã chọn thực sự tăng (tránh downloadSpeed spike / byte lãng phí).
+   * @param {import('webtorrent').default.Torrent} torrent
+   * @param {string} infoHash
+   * @param {number} selectedDownloaded
+   */
+  _computeEffectiveSpeed(torrent, infoHash, selectedDownloaded) {
+    const hash = this._normalizeHash(infoHash);
+    const now = Date.now();
+    const prev = this._transferSamples.get(hash);
+
+    if (!prev) {
+      this._transferSamples.set(hash, {
+        downloaded: selectedDownloaded,
+        time: now,
+        lastSpeed: torrent.downloadSpeed || 0,
+      });
+      return torrent.downloadSpeed || 0;
+    }
+
+    const elapsedSec = (now - prev.time) / 1000;
+    if (elapsedSec < 0.4) {
+      return prev.lastSpeed ?? torrent.downloadSpeed ?? 0;
+    }
+
+    const effective = Math.max(0, (selectedDownloaded - prev.downloaded) / elapsedSec);
+    const speed = effective > 0 ? effective : torrent.downloadSpeed || 0;
+    this._transferSamples.set(hash, { downloaded: selectedDownloaded, time: now, lastSpeed: speed });
+    return speed;
+  }
+
+  /**
    * @param {import('webtorrent').default.Torrent} torrent
    */
   _resolveStatus(torrent) {
     const hash = this._normalizeHash(torrent.infoHash);
     if (this._stopped.has(hash)) return 'stopped';
     if (torrent.paused) return 'paused';
-    if (torrent.done || torrent.progress >= 1) return 'seeding';
+    if (this._isSelectedComplete(torrent, hash)) return 'seeding';
     return 'downloading';
   }
 
@@ -527,19 +840,25 @@ class TorrentManager extends EventEmitter {
    * @param {import('webtorrent').default.Torrent} torrent
    */
   _buildStats(torrent) {
-    const done = torrent.done || torrent.progress >= 1;
-    const eta = done ? null : (Number.isFinite(torrent.timeRemaining) ? torrent.timeRemaining : null);
+    const hash = this._normalizeHash(torrent.infoHash);
+    const transfer = this._getSelectedTransfer(torrent, hash);
+    const progress = this._percentFromTransfer(transfer);
+    const done = this._isSelectedComplete(torrent, hash);
+    const downloadSpeed = this._computeEffectiveSpeed(torrent, hash, transfer.downloaded);
+    const remaining = Math.max(0, transfer.totalLength - transfer.downloaded);
+    const eta =
+      done || downloadSpeed <= 0 ? null : (remaining / downloadSpeed) * 1000;
 
     return {
-      infoHash: this._normalizeHash(torrent.infoHash),
+      infoHash: hash,
       name: torrent.name || 'Đang tải metadata…',
-      progress: Math.round(torrent.progress * 1000) / 10,
-      downloadSpeed: torrent.downloadSpeed,
+      progress,
+      downloadSpeed,
       uploadSpeed: torrent.uploadSpeed,
       numPeers: torrent.numPeers,
       status: this._resolveStatus(torrent),
       eta,
-      length: torrent.length,
+      length: transfer.totalLength || torrent.length,
       path: torrent.path,
     };
   }
@@ -653,16 +972,19 @@ class TorrentManager extends EventEmitter {
     if (!this._ready) return;
 
     const client = await getClient();
-    const activeEntries = client.torrents.map((torrent) => {
+    const activeEntries = client.torrents
+      .filter((torrent) => !this._previews.has(this._normalizeHash(torrent.infoHash)))
+      .map((torrent) => {
       const hash = this._normalizeHash(torrent.infoHash);
+      const transfer = this._getSelectedTransfer(torrent, hash);
       return {
         torrentId: torrent.magnetURI || this._torrentSources.get(hash) || '',
         downloadPath: torrent.path,
         infoHash: hash,
         name: torrent.name || undefined,
         magnetURI: torrent.magnetURI || undefined,
-        progress: Math.round(torrent.progress * 1000) / 10,
-        length: torrent.length || 0,
+        progress: this._percentFromTransfer(transfer),
+        length: transfer.totalLength || torrent.length || 0,
         stopped: this._stopped.has(hash),
         paused: torrent.paused && !this._stopped.has(hash),
         unavailable: false,
@@ -865,7 +1187,7 @@ class TorrentManager extends EventEmitter {
   /**
    * @param {string} torrentId
    * @param {string} [downloadPath]
-   * @param {{ paused?: boolean, restore?: boolean, sessionEntry?: object }} [options]
+   * @param {{ paused?: boolean, restore?: boolean, preview?: boolean, sessionEntry?: object }} [options]
    */
   async _addTorrentWithOptions(torrentId, downloadPath, options = {}) {
     this._assertReady();
@@ -941,7 +1263,11 @@ class TorrentManager extends EventEmitter {
       try {
         torrentRef = client.add(
           source,
-          { path: targetPath, paused: options.paused === true },
+          {
+            ...TORRENT_OPTS,
+            path: targetPath,
+            paused: options.paused === true,
+          },
           (added) => {
             succeed(added);
           }

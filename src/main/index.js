@@ -1,5 +1,6 @@
-const { app, BrowserWindow } = require('electron');
-const { createMainWindow } = require('./window');
+const { app, BrowserWindow, nativeImage } = require('electron');
+const path = require('path');
+const { createMainWindow, registerPackagedProtocolHandlers } = require('./main');
 const { registerIpcHandlers } = require('./ipc/handlers');
 const { torrentManager } = require('./torrent/TorrentManager');
 const {
@@ -15,6 +16,7 @@ let protocolBridge = null;
 /** @type {((wc: import('electron').WebContents) => void) | null} */
 let pushInitialState = null;
 let isQuitting = false;
+let startupComplete = false;
 
 /** URL/file mở trước khi app ready (macOS) */
 /** @type {string | null} */
@@ -30,6 +32,13 @@ function handleExternalOpen(source) {
   }
 }
 
+function ensureIpcHandlers() {
+  const result = registerIpcHandlers(getMainWindow);
+  if (result?.pushInitialState) {
+    pushInitialState = result.pushInitialState;
+  }
+}
+
 function wireWindowEvents(win) {
   win.webContents.on('did-finish-load', () => {
     pushInitialState?.(win.webContents);
@@ -38,6 +47,8 @@ function wireWindowEvents(win) {
 }
 
 function openMainWindow() {
+  if (!startupComplete) return null;
+
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.show();
     mainWindow.focus();
@@ -81,8 +92,10 @@ app.on('open-file', (event, filePath) => {
   else earlyOpenTarget = filePath;
 });
 
-// macOS: click icon Dock khi không còn cửa sổ
+// macOS: click icon Dock — chỉ mở cửa sổ sau khi IPC + TorrentManager sẵn sàng
 app.on('activate', () => {
+  if (!startupComplete) return;
+
   if (BrowserWindow.getAllWindows().length === 0) {
     openMainWindow();
   } else if (mainWindow && !mainWindow.isDestroyed()) {
@@ -106,15 +119,31 @@ app.on('before-quit', (e) => {
 if (!setupSingleInstance(handleExternalOpen)) {
   // Instance thứ hai — thoát ngay
 } else {
+  // Đăng ký IPC ngay khi main process load — trước whenReady / activate
+  ensureIpcHandlers();
+
   protocolBridge = createProtocolBridge(getMainWindow);
 
   app.whenReady().then(async () => {
-    ({ pushInitialState } = registerIpcHandlers(getMainWindow));
+    if (process.platform === 'darwin' && app.dock) {
+      const iconPath = path.join(__dirname, '../../assets/icon.png');
+      const icon = nativeImage.createFromPath(iconPath);
+      if (!icon.isEmpty()) {
+        app.dock.setIcon(icon);
+      } else {
+        console.warn('[My Torrent] Không load được Dock icon:', iconPath);
+      }
+    }
+
+    ensureIpcHandlers();
 
     await torrentManager.init();
+    startupComplete = true;
+
     openMainWindow();
 
     setupProtocolListeners(handleExternalOpen);
+    registerPackagedProtocolHandlers();
 
     for (const payload of parseArgvForTorrents(process.argv)) {
       handleExternalOpen(payload.source);

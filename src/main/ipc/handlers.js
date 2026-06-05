@@ -18,11 +18,45 @@ function registerIpcHandlers(getMainWindow) {
 
   // ── Renderer → Main ────────────────────────────────────────────────────────
 
-  ipcMain.handle(channels.ADD_TORRENT, async (_event, id, downloadPath) => {
+  ipcMain.handle(channels.ADD_TORRENT, async (_event, id, downloadPath, options = {}) => {
     if (!id || typeof id !== 'string') {
       throw new Error('id phải là chuỗi magnet URI hoặc đường dẫn .torrent');
     }
-    return torrentManager.addTorrent(id.trim(), downloadPath);
+    return torrentManager.addTorrent(id.trim(), downloadPath, options);
+  });
+
+  ipcMain.handle(channels.INSPECT_TORRENT_SOURCE, async (_event, source) => {
+    if (!source || typeof source !== 'string') {
+      throw new Error('source phải là magnet URI hoặc đường dẫn .torrent');
+    }
+    return torrentManager.inspectTorrentSource(source.trim());
+  });
+
+  ipcMain.handle(channels.PREPARE_TORRENT_PREVIEW, async (_event, source, downloadPath) => {
+    if (!source || typeof source !== 'string') {
+      throw new Error('source phải là magnet URI hoặc đường dẫn .torrent');
+    }
+    if (!downloadPath || typeof downloadPath !== 'string') {
+      throw new Error('downloadPath phải là thư mục hợp lệ');
+    }
+    return torrentManager.prepareTorrentPreview(source.trim(), downloadPath);
+  });
+
+  ipcMain.handle(channels.CONFIRM_TORRENT_PREVIEW, async (_event, infoHash, fileSelection) => {
+    if (!infoHash || typeof infoHash !== 'string') {
+      throw new Error('infoHash không hợp lệ');
+    }
+    if (!Array.isArray(fileSelection)) {
+      throw new Error('fileSelection phải là mảng boolean');
+    }
+    return torrentManager.confirmTorrentPreview(infoHash, fileSelection);
+  });
+
+  ipcMain.handle(channels.CANCEL_TORRENT_PREVIEW, async (_event, infoHash) => {
+    if (!infoHash || typeof infoHash !== 'string') {
+      throw new Error('infoHash không hợp lệ');
+    }
+    return torrentManager.cancelTorrentPreview(infoHash);
   });
 
   ipcMain.handle(channels.CONTROL_TORRENT, async (_event, infoHash, action, options = {}) => {
@@ -77,6 +111,36 @@ function registerIpcHandlers(getMainWindow) {
     return getDefaultDownloadPath();
   });
 
+  ipcMain.handle(channels.WINDOW_MINIMIZE, () => {
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) win.minimize();
+    return { ok: true };
+  });
+
+  ipcMain.handle(channels.WINDOW_MAXIMIZE_TOGGLE, () => {
+    const win = getMainWindow();
+    if (!win || win.isDestroyed()) return { maximized: false };
+
+    if (win.isMaximized()) {
+      win.unmaximize();
+      return { maximized: false };
+    }
+
+    win.maximize();
+    return { maximized: true };
+  });
+
+  ipcMain.handle(channels.WINDOW_IS_MAXIMIZED, () => {
+    const win = getMainWindow();
+    return { maximized: Boolean(win && !win.isDestroyed() && win.isMaximized()) };
+  });
+
+  ipcMain.handle(channels.WINDOW_CLOSE, () => {
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) win.close();
+    return { ok: true };
+  });
+
   ipcMain.handle(channels.OPEN_TORRENT_FOLDER, async (_event, infoHash) => {
     const stats = await torrentManager.getTorrentStats();
     const torrent = stats.find((t) => t.infoHash === infoHash);
@@ -115,7 +179,17 @@ function registerIpcHandlers(getMainWindow) {
 let _eventsBound = false;
 
 function _bindTorrentEvents(getMainWindow) {
-  if (_eventsBound) return;
+  const pushInitialState = async (webContents) => {
+    if (webContents.isDestroyed()) return;
+    try {
+      const stats = await torrentManager.getTorrentStats();
+      webContents.send(channels.TORRENT_UPDATE, stats);
+    } catch { /* ignore */ }
+  };
+
+  if (_eventsBound) {
+    return { pushInitialState };
+  }
   _eventsBound = true;
 
   const send = (channel, payload) => {
@@ -144,15 +218,6 @@ function _bindTorrentEvents(getMainWindow) {
   torrentManager.on('file-selection-changed', (payload) => {
     send(channels.FILE_SELECTION, payload);
   });
-
-  // Gửi snapshot ban đầu khi renderer load xong
-  const pushInitialState = async (webContents) => {
-    if (webContents.isDestroyed()) return;
-    try {
-      const stats = await torrentManager.getTorrentStats();
-      webContents.send(channels.TORRENT_UPDATE, stats);
-    } catch { /* ignore */ }
-  };
 
   return { pushInitialState };
 }

@@ -24,3 +24,11 @@ child.on('error', (err) => {
   console.error(err);
   process.exit(1);
 });
+
+function shutdownChild() {
+  if (child.killed) return;
+  child.kill('SIGTERM');
+}
+
+process.on('SIGTERM', shutdownChild);
+process.on('SIGINT', shutdownChild);
